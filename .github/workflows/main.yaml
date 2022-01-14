@@ -1,7 +1,7 @@
 name: Get latest release version
 on:
   schedule:
-    - cron:  '40 * * * *'
+    - cron:  '60 * * * *'
 jobs:
   get-version:
     runs-on: ubuntu-latest
@@ -21,7 +21,7 @@ jobs:
       - name: Commit latest release version
         if: steps.git-check.outputs.modified == 'true'
         run: |
-          git config --global user.name 'test'
-          git config --global user.email 'test@users.noreply.github.com'
+          git config --global user.name 'Daniele De Lorenzi'
+          git config --global user.email 'dark-vex@users.noreply.github.com'
           git commit -am "New release version"
           git push
