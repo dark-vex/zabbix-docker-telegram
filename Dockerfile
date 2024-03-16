@@ -1,4 +1,4 @@
-FROM zabbix/zabbix-server-mysql:ubuntu-5.0-latest
+FROM zabbix/zabbix-server-mysql:ubuntu-6.0-latest
 
 USER root
 

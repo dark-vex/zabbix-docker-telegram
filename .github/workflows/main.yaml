@@ -11,10 +11,10 @@ jobs:
           token: ${{ secrets.REPO_SCOPED_TOKEN }}
       - name: Fetch release version
         run: |
-          curl -sL https://api.github.com/repos/zabbix/zabbix-docker/releases |grep '\"tag_name\": \"5.0.*\"' | \
+          curl -sL https://api.github.com/repos/zabbix/zabbix-docker/releases |grep '\"tag_name\": \"6.0.*\"' | \
           awk '{print $2}' | \
           head -1 | \
-          tr -d '",' > release-versions/zabbix-server-5.0-latest.txt
+          tr -d '",' > release-versions/zabbix-server-6.0-latest.txt
       - name: Check for modified files
         id: git-check
         run: echo ::set-output name=modified::$([ -z "`git status --porcelain`" ] && echo "false" || echo "true")
