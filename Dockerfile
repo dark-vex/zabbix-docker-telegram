@@ -7,7 +7,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt update && apt-get -y \
             python3 python3-pip && \
             apt-get -y clean && \
             rm -rf /var/lib/apt/lists/* && \
-            ln -s /usr/bin/python3.8 /usr/bin/python
+            ln -s /usr/bin/python3 /usr/bin/python
 
 USER 1997
 
