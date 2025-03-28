@@ -30,7 +30,7 @@ jobs:
 
       - name: Sign image
         run: |
-          cosign sign --yes --key env://COSIGN_PRIVATE_KEY dark-vex/zabbix-server-mysql:latest
+          cosign sign --yes --key env://COSIGN_PRIVATE_KEY ghcr.io/dark-vex/zabbix-server-mysql:latest
         env:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
