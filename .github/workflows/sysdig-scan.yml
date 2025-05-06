@@ -51,7 +51,7 @@ jobs:
         sysdig-secure-url: https://eu1.app.sysdig.com
 
     - name: Upload SARIF file
-      uses: github/codeql-action/upload-sarif@v2
+      uses: github/codeql-action/upload-sarif@v3
       #Upload SARIF file
       if: success() || failure()
       with:
