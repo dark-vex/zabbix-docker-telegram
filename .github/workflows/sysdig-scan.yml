@@ -55,4 +55,4 @@ jobs:
       #Upload SARIF file
       if: success() || failure()
       with:
-        sarif_file: sarif.json
+        sarif_file: ${{ github.workspace }}/sarif.json
