@@ -30,7 +30,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: true
-          tags: dark-vex/zabbix-server-mysql:latest
+          tags: ghcr.io/dark-vex/zabbix-server-mysql:latest
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3.9.1
