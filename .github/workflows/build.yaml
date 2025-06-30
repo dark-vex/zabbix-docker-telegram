@@ -5,6 +5,8 @@ on:
   push:
     paths:
       - 'release-versions/*'
+      - Dockerfile
+      - requirements.txt
 
 jobs:
   build_zabbix_server:
