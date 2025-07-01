@@ -49,6 +49,7 @@ jobs:
         # US-West https://us2.app.sysdig.com
         # EU      https://eu1.app.sysdig.com
         sysdig-secure-url: https://eu1.app.sysdig.com
+        severity-at-least: high
 
     - name: Upload SARIF file
       uses: github/codeql-action/upload-sarif@v3
