@@ -35,25 +35,16 @@ jobs:
       # Change ${{ github.repository }} variable by another image name if you want but don't forget changing also image-tag below
       run: docker build . --file Dockerfile --tag ghcr.io/dark-vex/zabbix-server-mysql:latest
 
-#    - name: Sysdig Secure Inline Scan
-#      id: scan
-#      uses: sysdiglabs/scan-action@v6
-#      with:
-#        # Tag of the image to analyse.
-#        # Change ${{ github.repository }} variable by another image name if you want but don't forget changing also image-tag above
-#        image-tag: ghcr.io/dark-vex/zabbix-server-mysql:latest
-#        # API token for Sysdig Scanning auth
-#        sysdig-secure-token: ${{ secrets.SYSDIG_SECURE_TOKEN }}
-#        # Sysdig secure endpoint. Please read: https://docs.sysdig.com/en/docs/administration/saas-regions-and-ip-ranges/
-#        # US-East https://secure.sysdig.com
-#        # US-West https://us2.app.sysdig.com
-#        # EU      https://eu1.app.sysdig.com
-#        sysdig-secure-url: https://eu1.app.sysdig.com
-#        severity-at-least: high
+    - name: Image Scan
+      id: scan
+      run: |
+        curl -Lo wizcli https://downloads.wiz.io/v1/wizcli/latest/wizcli-linux-amd64
+        chmod +x wizcli
+        ./wizcli scan container-image ghcr.io/dark-vex/zabbix-server-mysql:latest --by-policy-hits=DISABLED --sarif-output-file=${{ github.workspace }}/sarif.json
 
-#    - name: Upload SARIF file
-#      uses: github/codeql-action/upload-sarif@v4
-#      #Upload SARIF file
-#      if: success() || failure()
-#      with:
-#        sarif_file: ${{ github.workspace }}/sarif.json
+    - name: Upload SARIF file
+      uses: github/codeql-action/upload-sarif@v4
+      #Upload SARIF file
+      if: success() || failure()
+      with:
+        sarif_file: ${{ github.workspace }}/sarif.json
