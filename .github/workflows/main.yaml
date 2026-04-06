@@ -6,18 +6,21 @@ jobs:
   get-version:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v6
         with:
           token: ${{ secrets.REPO_SCOPED_TOKEN }}
+
       - name: Fetch release version
         run: |
           curl -sL https://api.github.com/repos/zabbix/zabbix-docker/releases |grep '\"tag_name\": \"7.0.*\"' | \
           awk '{print $2}' | \
           head -1 | \
           tr -d '",' > release-versions/zabbix-server-7.0-latest.txt
+
       - name: Check for modified files
         id: git-check
         run: echo ::set-output name=modified::$([ -z "`git status --porcelain`" ] && echo "false" || echo "true")
+
       - name: Commit latest release version
         if: steps.git-check.outputs.modified == 'true'
         run: |
