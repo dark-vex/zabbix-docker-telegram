@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v6
 
     - name: Build the Docker image
       # Tag image to be built
@@ -43,7 +43,7 @@ jobs:
       run: |
         curl -Lo wizcli https://downloads.wiz.io/v1/wizcli/latest/wizcli-linux-amd64
         chmod +x wizcli
-        ./wizcli scan container-image ghcr.io/dark-vex/zabbix-server-mysql:latest --by-policy-hits=DISABLED --sarif-output-file=sarif.json
+        ./wizcli scan container-image ghcr.io/dark-vex/zabbix-server-mysql:latest --sarif-output-file=sarif.json
 
     - name: Upload SARIF file
       uses: github/codeql-action/upload-sarif@v4
