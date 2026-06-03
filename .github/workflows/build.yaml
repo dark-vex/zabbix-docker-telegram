@@ -28,8 +28,8 @@ jobs:
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          username: "dark-vex"
-          password: ${{ secrets.REPO_SCOPED_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
           registry: ghcr.io
 
       - name: 'Build:dockerimage'
