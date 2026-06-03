@@ -15,8 +15,11 @@ permissions:
 jobs:
   build_zabbix_server:
     runs-on: ubuntu-latest
-    env:
-      GITHUB_TOKEN: ${{ secrets.REPO_SCOPED_TOKEN }}
+
+    permissions:
+      contents: read
+      packages: write
+
     steps:
 
       - name: Checkout
