@@ -52,7 +52,7 @@ jobs:
             ZBX_VERSION=${{ steps.version.outputs.version }}
           tags: |
             ghcr.io/dark-vex/zabbix-server-mysql:latest
-            ghcr.io/dark-vex/zabbix-server-mysql:ubuntu-${{ steps.version.outputs.version }}
+            ghcr.io/dark-vex/zabbix-server-mysql:ubuntu-${{ steps.version.outputs.minor }}
             ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }}
             ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.minor }}
 
