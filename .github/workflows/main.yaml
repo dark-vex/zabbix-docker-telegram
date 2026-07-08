@@ -5,14 +5,14 @@ on:
     - cron:  '10 1 * * *'
 permissions:
   contents: write
+  pull-requests: write
 jobs:
   get-version:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
-          #token: ${{ secrets.REPO_SCOPED_TOKEN }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.REPO_SCOPED_TOKEN }}
 
       - name: Fetch release version
         run: |
@@ -21,14 +21,25 @@ jobs:
           head -1 | \
           tr -d '",' > release-versions/zabbix-server-7.0-latest.txt
 
-      - name: Check for modified files
-        id: git-check
-        run: echo "modified=$([ -z "$(git status --porcelain)" ] && echo "false" || echo "true")" >> "$GITHUB_OUTPUT"
+      - name: Create pull request
+        id: cpr
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.REPO_SCOPED_TOKEN }}
+          sign-commits: true
+          branch: update/zabbix-server-7.0
+          delete-branch: true
+          commit-message: New release version
+          committer: Daniele De Lorenzi <dark-vex@users.noreply.github.com>
+          author: Daniele De Lorenzi <dark-vex@users.noreply.github.com>
+          title: Update Zabbix 7.0 release version
+          body: |
+            Automated update of `release-versions/zabbix-server-7.0-latest.txt`
+            to the latest Zabbix 7.0 release.
 
-      - name: Commit latest release version
-        if: steps.git-check.outputs.modified == 'true'
-        run: |
-          git config --global user.name 'Daniele De Lorenzi'
-          git config --global user.email 'dark-vex@users.noreply.github.com'
-          git commit -am "New release version"
-          git push
+      - name: Enable auto-merge
+        if: steps.cpr.outputs.pull-request-operation == 'created'
+        run: gh pr merge --auto --squash "${{ steps.cpr.outputs.pull-request-number }}"
+        env:
+          GH_TOKEN: ${{ secrets.REPO_SCOPED_TOKEN }}
+          GH_REPO: ${{ github.repository }}
