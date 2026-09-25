@@ -61,7 +61,7 @@ jobs:
         build-args: |
           ZBX_IMAGE=${{ steps.version.outputs.base_image }}
         tags: ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }}-${{ matrix.arch }}
-        outputs: type=docker,dest=${{ runner.temp }}/image-${{ matrix.arch }}.tar
+        outputs: type=oci,dest=${{ runner.temp }}/image-${{ matrix.arch }}.tar
 
     - name: Upload image
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -113,13 +113,28 @@ jobs:
         path: ${{ runner.temp }}/images
         merge-multiple: true
 
-    - name: Load images
+    - name: Stage images in local registry
+      id: stage
       env:
         IMAGES_DIR: ${{ runner.temp }}/images
+        IMAGE_NAME: ghcr.io/dark-vex/zabbix-server-mysql
+        LOCAL_IMAGE: localhost:5000/zabbix-server-mysql
+        VERSION: ${{ steps.version.outputs.version }}
       run: |
         set -euo pipefail
         for ARCH in amd64 arm64; do
-          docker load --input "${IMAGES_DIR}/image-${ARCH}.tar"
+          skopeo copy --preserve-digests --dest-tls-verify=false \
+            --digestfile "${RUNNER_TEMP}/digest-${ARCH}" \
+            "oci-archive:${IMAGES_DIR}/image-${ARCH}.tar" \
+            "docker://${LOCAL_IMAGE}:${ARCH}"
+          DIGEST="$(tr -d '[:space:]' < "${RUNNER_TEMP}/digest-${ARCH}")"
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Unexpected ${ARCH} digest: '$DIGEST'"
+            exit 1
+          fi
+          docker pull "${LOCAL_IMAGE}@${DIGEST}"
+          docker tag "${LOCAL_IMAGE}@${DIGEST}" "${IMAGE_NAME}:${VERSION}-${ARCH}"
+          echo "${ARCH}=${DIGEST}" >> "$GITHUB_OUTPUT"
         done
 
     - name: Set up verified Wiz CLI
@@ -161,20 +176,23 @@ jobs:
 
     - name: Assemble multi-arch index
       env:
-        IMAGE_NAME: ghcr.io/dark-vex/zabbix-server-mysql
         LOCAL_IMAGE: localhost:5000/zabbix-server-mysql
         VERSION: ${{ steps.version.outputs.version }}
+        AMD64_DIGEST: ${{ steps.stage.outputs.amd64 }}
+        ARM64_DIGEST: ${{ steps.stage.outputs.arm64 }}
       run: |
         set -euo pipefail
-        SOURCES=()
-        for ARCH in amd64 arm64; do
-          docker tag "${IMAGE_NAME}:${VERSION}-${ARCH}" "${LOCAL_IMAGE}:${ARCH}"
-          docker push "${LOCAL_IMAGE}:${ARCH}"
-          REF="$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${LOCAL_IMAGE}:${ARCH}" | grep "^${LOCAL_IMAGE}@" | head -n1)"
-          SOURCES+=("$REF")
-        done
-        docker buildx imagetools create --tag "${LOCAL_IMAGE}:${VERSION}" "${SOURCES[@]}"
-        docker buildx imagetools inspect "${LOCAL_IMAGE}:${VERSION}"
+        docker buildx imagetools create \
+          --tag "${LOCAL_IMAGE}:${VERSION}" \
+          --annotation "index:org.opencontainers.image.version=${VERSION}" \
+          "${LOCAL_IMAGE}@${AMD64_DIGEST}" \
+          "${LOCAL_IMAGE}@${ARM64_DIGEST}"
+        MEDIA_TYPE="$(docker buildx imagetools inspect "${LOCAL_IMAGE}:${VERSION}" --raw | jq -r '.mediaType')"
+        if [ "$MEDIA_TYPE" != "application/vnd.oci.image.index.v1+json" ]; then
+          echo "::error::Unexpected index media type: '$MEDIA_TYPE'"
+          exit 1
+        fi
+        docker buildx imagetools inspect "${LOCAL_IMAGE}:${VERSION}" --raw | jq .
 
     - name: Grype scan
       uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
