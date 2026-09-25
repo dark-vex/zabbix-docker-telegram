@@ -29,6 +29,12 @@ jobs:
       id-token: write
       attestations: write
 
+    services:
+      registry:
+        image: mirror.gcr.io/library/registry:3.1.2@sha256:c87f33837722a100572e95d7dc4bf539fc42cf68202b13c3bc03c0ff54c3a649
+        ports:
+          - 5000:5000
+
     steps:
 
       - name: Checkout
@@ -58,6 +64,8 @@ jobs:
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        env:
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         with:
           images: ghcr.io/dark-vex/zabbix-server-mysql
           flavor: |
@@ -72,17 +80,67 @@ jobs:
             org.opencontainers.image.description=Zabbix server MySQL ${{ steps.version.outputs.minor }} Ubuntu image with Python libraries for Zabbix-in-Telegram
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
             org.opencontainers.image.base.name=${{ steps.version.outputs.base_image }}
+          annotations: |
+            org.opencontainers.image.title=zabbix-server-mysql
+            org.opencontainers.image.description=Zabbix server MySQL ${{ steps.version.outputs.minor }} Ubuntu image with Python libraries for Zabbix-in-Telegram
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.base.name=${{ steps.version.outputs.base_image }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: network=host
 
       - name: 'Build:dockerimage'
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
-          push: false
-          load: true
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: false
+          sbom: false
           build-args: |
             ZBX_IMAGE=${{ steps.version.outputs.base_image }}
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: localhost:5000/zabbix-server-mysql:scan
           labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+
+      - name: Pull platform images
+        id: platforms
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          LOCAL_IMAGE: localhost:5000/zabbix-server-mysql
+          IMAGE_NAME: ghcr.io/dark-vex/zabbix-server-mysql
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Unexpected image digest: '$DIGEST'"
+            exit 1
+          fi
+
+          INDEX="$(curl -fsS \
+            -H 'Accept: application/vnd.oci.image.index.v1+json' \
+            "http://localhost:5000/v2/zabbix-server-mysql/manifests/${DIGEST}")"
+
+          for ARCH in amd64 arm64; do
+            PLATFORM_DIGEST="$(jq -r --arg arch "$ARCH" \
+              '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest] | first // empty' \
+              <<< "$INDEX")"
+            if [[ ! "$PLATFORM_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::No linux/${ARCH} manifest in ${DIGEST}"
+              exit 1
+            fi
+            docker pull "${LOCAL_IMAGE}@${PLATFORM_DIGEST}"
+            docker tag "${LOCAL_IMAGE}@${PLATFORM_DIGEST}" "${IMAGE_NAME}:${VERSION}-${ARCH}"
+            echo "${ARCH}=${PLATFORM_DIGEST}" >> "$GITHUB_OUTPUT"
+          done
 
       - name: Set up verified Wiz CLI
         id: wizcli
@@ -93,11 +151,16 @@ jobs:
         env:
           WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
           WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
-          IMAGE: ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }}
+          IMAGE_NAME: ghcr.io/dark-vex/zabbix-server-mysql
+          VERSION: ${{ steps.version.outputs.version }}
           WIZ_POLICIES: "[ddl] Default vulnerabilities policy"
           WIZCLI: ${{ steps.wizcli.outputs.path }}
         run: |
-          "$WIZCLI" scan container-image "$IMAGE" --policies="$WIZ_POLICIES"
+          RC=0
+          for ARCH in amd64 arm64; do
+            "$WIZCLI" scan container-image "${IMAGE_NAME}:${VERSION}-${ARCH}" --policies="$WIZ_POLICIES" || RC=1
+          done
+          exit "$RC"
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -109,23 +172,26 @@ jobs:
       - name: Push image
         id: push
         env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          LOCAL_IMAGE: localhost:5000/zabbix-server-mysql
           IMAGE_NAME: ghcr.io/dark-vex/zabbix-server-mysql
           VERSION: ${{ steps.version.outputs.version }}
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           set -euo pipefail
 
+          ARGS=()
           while IFS= read -r REF; do
             if [ -n "$REF" ]; then
-              docker push "$REF"
+              ARGS+=(--tag "$REF")
             fi
           done <<< "$TAGS"
 
-          REF="$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$IMAGE_NAME:$VERSION" | grep "^${IMAGE_NAME}@" | head -n1)"
-          DIGEST="${REF#*@}"
+          docker buildx imagetools create "${ARGS[@]}" "${LOCAL_IMAGE}@${DIGEST}"
 
-          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-            echo "::error::Unexpected digest format: '$DIGEST'"
+          PUSHED="$(docker buildx imagetools inspect "${IMAGE_NAME}:${VERSION}" --format '{{json .Manifest}}' | jq -r '.digest')"
+          if [ "$PUSHED" != "$DIGEST" ]; then
+            echo "::error::Published digest '$PUSHED' does not match scanned digest '$DIGEST'"
             exit 1
           fi
 
@@ -138,7 +204,7 @@ jobs:
         env:
           IMAGE_REF: ghcr.io/dark-vex/zabbix-server-mysql@${{ steps.push.outputs.digest }}
         run: |
-          cosign sign --yes "$IMAGE_REF"
+          cosign sign --yes --recursive "$IMAGE_REF"
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -147,17 +213,34 @@ jobs:
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
 
-      - name: Generate SBOM
+      - name: Generate SBOM (amd64)
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
-          image: ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }}
+          image: ghcr.io/dark-vex/zabbix-server-mysql@${{ steps.platforms.outputs.amd64 }}
           format: spdx-json
-          output-file: sbom.spdx.json
+          output-file: sbom-amd64.spdx.json
+          upload-artifact: false
 
-      - name: Attest SBOM
+      - name: Attest SBOM (amd64)
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
           subject-name: ghcr.io/dark-vex/zabbix-server-mysql
-          subject-digest: ${{ steps.push.outputs.digest }}
-          sbom-path: sbom.spdx.json
+          subject-digest: ${{ steps.platforms.outputs.amd64 }}
+          sbom-path: sbom-amd64.spdx.json
+          push-to-registry: true
+
+      - name: Generate SBOM (arm64)
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          image: ghcr.io/dark-vex/zabbix-server-mysql@${{ steps.platforms.outputs.arm64 }}
+          format: spdx-json
+          output-file: sbom-arm64.spdx.json
+          upload-artifact: false
+
+      - name: Attest SBOM (arm64)
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-name: ghcr.io/dark-vex/zabbix-server-mysql
+          subject-digest: ${{ steps.platforms.outputs.arm64 }}
+          sbom-path: sbom-arm64.spdx.json
           push-to-registry: true
