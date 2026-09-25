@@ -39,6 +39,17 @@ jobs:
           fi
           echo "$VERSION" > release-versions/zabbix-server-7.0-latest.txt
 
+      - name: Resolve base image digest
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '[:space:]' < release-versions/zabbix-server-7.0-latest.txt)"
+          DIGEST="$(docker buildx imagetools inspect "docker.io/zabbix/zabbix-server-mysql:ubuntu-${VERSION}" --format '{{json .Manifest}}' | jq -r '.digest')"
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Resolved an invalid base image digest: '$DIGEST'"
+            exit 1
+          fi
+          echo "$DIGEST" > release-versions/zabbix-server-7.0-latest.digest
+
       - name: Create pull request
         id: cpr
         uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
@@ -47,13 +58,14 @@ jobs:
           sign-commits: true
           branch: update/zabbix-server-7.0
           delete-branch: true
-          commit-message: New release version
+          commit-message: Update Zabbix 7.0 release version and base image digest
           committer: Daniele De Lorenzi <dark-vex@users.noreply.github.com>
           author: Daniele De Lorenzi <dark-vex@users.noreply.github.com>
-          title: Update Zabbix 7.0 release version
+          title: Update Zabbix 7.0 release version and base image digest
           body: |
             Automated update of `release-versions/zabbix-server-7.0-latest.txt`
-            to the latest Zabbix 7.0 release.
+            and `release-versions/zabbix-server-7.0-latest.digest` to the latest
+            Zabbix 7.0 release and the current digest of its Ubuntu base image.
 
       - name: Enable auto-merge
         if: steps.cpr.outputs.pull-request-operation == 'created'

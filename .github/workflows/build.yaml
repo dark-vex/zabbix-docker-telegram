@@ -8,6 +8,7 @@ on:
       - 'release-versions/zabbix-server-7.0-latest.txt'
       - Dockerfile
       - requirements.txt
+      - 'release-versions/zabbix-server-7.0-latest.digest'
   schedule:
     - cron: '40 2 * * 0'
 
@@ -37,8 +38,16 @@ jobs:
             echo "::error::Invalid version string: '$VERSION'"
             exit 1
           fi
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "minor=${VERSION%.*}" >> "$GITHUB_OUTPUT"
+          DIGEST="$(tr -d '[:space:]' < release-versions/zabbix-server-7.0-latest.digest)"
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Invalid base image digest: '$DIGEST'"
+            exit 1
+          fi
+          {
+            echo "version=${VERSION}"
+            echo "minor=${VERSION%.*}"
+            echo "base_image=zabbix/zabbix-server-mysql:ubuntu-${VERSION}@${DIGEST}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: 'Build:dockerimage'
         id: build
@@ -47,7 +56,7 @@ jobs:
           push: false
           load: true
           build-args: |
-            ZBX_VERSION=${{ steps.version.outputs.version }}
+            ZBX_IMAGE=${{ steps.version.outputs.base_image }}
           tags: |
             ghcr.io/dark-vex/zabbix-server-mysql:latest
             ghcr.io/dark-vex/zabbix-server-mysql:ubuntu-${{ steps.version.outputs.minor }}
