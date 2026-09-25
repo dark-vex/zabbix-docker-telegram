@@ -1,9 +1,4 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
-name: Build, scan, push and upload sarif report
+name: Build and scan image
 
 on:
   push:
@@ -47,8 +42,6 @@ jobs:
         echo "base_image=zabbix/zabbix-server-mysql:ubuntu-${VERSION}@${DIGEST}" >> "$GITHUB_OUTPUT"
 
     - name: Build the Docker image
-      # Tag image to be built
-      # Change ${{ github.repository }} variable by another image name if you want but don't forget changing also image-tag below
       env:
         BASE_IMAGE: ${{ steps.version.outputs.base_image }}
         IMAGE: ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }}
@@ -74,7 +67,6 @@ jobs:
 
     - name: Upload SARIF file
       uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
-      #Upload SARIF file
       if: (success() || failure()) && hashFiles('sarif.json') != ''
       with:
         sarif_file: ${{ github.workspace }}/sarif.json
