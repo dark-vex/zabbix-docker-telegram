@@ -61,8 +61,9 @@ jobs:
           WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
           WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
           IMAGE: ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }}
+          WIZ_POLICIES: "[ddl] Default vulnerabilities policy"
         run: |
-          wizcli scan container-image "$IMAGE"
+          wizcli scan container-image "$IMAGE" --policies="$WIZ_POLICIES"
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
