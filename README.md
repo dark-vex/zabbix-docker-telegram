@@ -14,6 +14,8 @@ Images are published to `ghcr.io/dark-vex/zabbix-server-mysql`:
 | `ubuntu-7.0` | Same as `7.0` |
 | `latest` | Same as `7.0` |
 
+Every tag is a multi-arch image for `linux/amd64` and `linux/arm64`. Both platforms are scanned with Wiz before any tag is published.
+
 Pin a digest (`ghcr.io/dark-vex/zabbix-server-mysql@sha256:...`) for fully reproducible deployments.
 
 ## Usage
@@ -47,10 +49,16 @@ cosign verify ghcr.io/dark-vex/zabbix-server-mysql:latest \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-Each image also carries SLSA build provenance and an SPDX SBOM attestation, verifiable with the GitHub CLI:
+Each image also carries SLSA build provenance, verifiable with the GitHub CLI:
 
 ```sh
 gh attestation verify oci://ghcr.io/dark-vex/zabbix-server-mysql:latest --repo dark-vex/zabbix-docker-telegram
-gh attestation verify oci://ghcr.io/dark-vex/zabbix-server-mysql:latest --repo dark-vex/zabbix-docker-telegram \
-  --predicate-type https://spdx.dev/Document/v2.3
+```
+
+An SPDX SBOM is attested for each platform image. Get the platform digest and verify it:
+
+```sh
+docker buildx imagetools inspect ghcr.io/dark-vex/zabbix-server-mysql:latest
+gh attestation verify oci://ghcr.io/dark-vex/zabbix-server-mysql@sha256:<platform digest> \
+  --repo dark-vex/zabbix-docker-telegram --predicate-type https://spdx.dev/Document/v2.3
 ```
