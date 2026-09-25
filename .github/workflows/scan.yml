@@ -56,8 +56,9 @@ jobs:
       env:
         WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
         WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
+        WIZ_POLICIES: "[ddl] Default vulnerabilities policy"
       run: |
-        wizcli scan container-image ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }} --sarif-output-file=sarif.json
+        wizcli scan container-image ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }} --policies="$WIZ_POLICIES" --sarif-output-file=sarif.json
 
     - name: Upload SARIF file
       uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
