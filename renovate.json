@@ -1,12 +1,26 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended",
-    "helpers:pinGitHubActionDigests"
+    "config:best-practices"
   ],
+  "minimumReleaseAge": "3 days",
+  "osvVulnerabilityAlerts": true,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "minimumReleaseAge": null
+  },
   "pip-compile": {
     "managerFilePatterns": ["/(^|/)requirements\\.txt$/"]
   },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/renovate\\.yml$/"],
+      "matchStrings": ["renovate-version: '(?<currentValue>[^']+)'"],
+      "depNameTemplate": "ghcr.io/renovatebot/renovate",
+      "datasourceTemplate": "docker"
+    }
+  ],
   "packageRules": [
     {
       "matchManagers": ["dockerfile"],
@@ -15,6 +29,11 @@
     {
       "matchManagers": ["pip_requirements"],
       "enabled": false
+    },
+    {
+      "matchManagers": ["custom.regex"],
+      "matchDepNames": ["ghcr.io/renovatebot/renovate"],
+      "pinDigests": false
     }
   ]
 }
