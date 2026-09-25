@@ -27,6 +27,8 @@ jobs:
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Read Zabbix version
       id: version
@@ -47,12 +49,16 @@ jobs:
     - name: Build the Docker image
       # Tag image to be built
       # Change ${{ github.repository }} variable by another image name if you want but don't forget changing also image-tag below
+      env:
+        BASE_IMAGE: ${{ steps.version.outputs.base_image }}
+        IMAGE: ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }}
       run: |
         docker build . --file Dockerfile \
-          --build-arg ZBX_IMAGE=${{ steps.version.outputs.base_image }} \
-          --tag ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }}
+          --build-arg ZBX_IMAGE="$BASE_IMAGE" \
+          --tag "$IMAGE"
 
     - name: Set up verified Wiz CLI
+      id: wizcli
       uses: ./.github/actions/setup-wizcli
 
     - name: Image Scan
@@ -61,8 +67,10 @@ jobs:
         WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
         WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
         WIZ_POLICIES: "[ddl] Default vulnerabilities policy"
+        WIZCLI: ${{ steps.wizcli.outputs.path }}
+        IMAGE: ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }}
       run: |
-        wizcli scan container-image ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }} --policies="$WIZ_POLICIES" --sarif-output-file=sarif.json
+        "$WIZCLI" scan container-image "$IMAGE" --policies="$WIZ_POLICIES" --sarif-output-file=sarif.json
 
     - name: Upload SARIF file
       uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
@@ -70,3 +78,20 @@ jobs:
       if: (success() || failure()) && hashFiles('sarif.json') != ''
       with:
         sarif_file: ${{ github.workspace }}/sarif.json
+
+    - name: Grype scan
+      uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+      with:
+        image: ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }}
+        fail-build: false
+        only-fixed: true
+        severity-cutoff: high
+        output-format: sarif
+        output-file: grype.sarif
+
+    - name: Upload Grype SARIF file
+      uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+      if: (success() || failure()) && hashFiles('grype.sarif') != ''
+      with:
+        sarif_file: ${{ github.workspace }}/grype.sarif
+        category: grype

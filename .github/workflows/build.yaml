@@ -29,6 +29,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Read Zabbix version
         id: version
@@ -64,6 +66,7 @@ jobs:
             ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.minor }}
 
       - name: Set up verified Wiz CLI
+        id: wizcli
         uses: ./.github/actions/setup-wizcli
 
       - name: Image Scan
@@ -73,8 +76,9 @@ jobs:
           WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
           IMAGE: ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }}
           WIZ_POLICIES: "[ddl] Default vulnerabilities policy"
+          WIZCLI: ${{ steps.wizcli.outputs.path }}
         run: |
-          wizcli scan container-image "$IMAGE" --policies="$WIZ_POLICIES"
+          "$WIZCLI" scan container-image "$IMAGE" --policies="$WIZ_POLICIES"
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0

@@ -2,7 +2,8 @@ name: Set up verified Wiz CLI
 description: >-
   Downloads the Wiz CLI binary, verifies its GPG signature against Wiz's
   pinned public key fingerprint and checks its SHA256 checksum before
-  adding it to PATH. Fails the job if either check does not pass.
+  exposing its path as the "path" output. Fails the job if either check
+  does not pass.
 
 inputs:
   version:
@@ -21,10 +22,16 @@ inputs:
     required: false
     default: 61DF40680AB1A80E51503B61CE4AE4BAD12EE02C
 
+outputs:
+  path:
+    description: Absolute path of the verified wizcli binary.
+    value: ${{ steps.install.outputs.path }}
+
 runs:
   using: composite
   steps:
     - name: Download and verify wizcli
+      id: install
       shell: bash
       env:
         WIZCLI_VERSION: ${{ inputs.version }}
@@ -70,5 +77,5 @@ runs:
         echo "$(tr -d '[:space:]' < wizcli-sha256)  wizcli" | sha256sum -c -
 
         chmod +x wizcli
-        echo "$WORKDIR" >> "$GITHUB_PATH"
+        echo "path=$WORKDIR/wizcli" >> "$GITHUB_OUTPUT"
         ./wizcli version
