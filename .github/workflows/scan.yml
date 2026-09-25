@@ -36,14 +36,20 @@ jobs:
           echo "::error::Invalid version string: '$VERSION'"
           exit 1
         fi
+        DIGEST="$(tr -d '[:space:]' < release-versions/zabbix-server-7.0-latest.digest)"
+        if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+          echo "::error::Invalid base image digest: '$DIGEST'"
+          exit 1
+        fi
         echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+        echo "base_image=zabbix/zabbix-server-mysql:ubuntu-${VERSION}@${DIGEST}" >> "$GITHUB_OUTPUT"
 
     - name: Build the Docker image
       # Tag image to be built
       # Change ${{ github.repository }} variable by another image name if you want but don't forget changing also image-tag below
       run: |
         docker build . --file Dockerfile \
-          --build-arg ZBX_VERSION=${{ steps.version.outputs.version }} \
+          --build-arg ZBX_IMAGE=${{ steps.version.outputs.base_image }} \
           --tag ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }}
 
     - name: Set up verified Wiz CLI
