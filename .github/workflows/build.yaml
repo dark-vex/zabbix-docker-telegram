@@ -55,6 +55,24 @@ jobs:
             echo "base_image=zabbix/zabbix-server-mysql:ubuntu-${VERSION}@${DIGEST}"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/dark-vex/zabbix-server-mysql
+          flavor: |
+            latest=false
+          tags: |
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ steps.version.outputs.minor }}
+            type=raw,value=ubuntu-${{ steps.version.outputs.minor }}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=zabbix-server-mysql
+            org.opencontainers.image.description=Zabbix server MySQL ${{ steps.version.outputs.minor }} Ubuntu image with Python libraries for Zabbix-in-Telegram
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.base.name=${{ steps.version.outputs.base_image }}
+
       - name: 'Build:dockerimage'
         id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -63,11 +81,8 @@ jobs:
           load: true
           build-args: |
             ZBX_IMAGE=${{ steps.version.outputs.base_image }}
-          tags: |
-            ghcr.io/dark-vex/zabbix-server-mysql:latest
-            ghcr.io/dark-vex/zabbix-server-mysql:ubuntu-${{ steps.version.outputs.minor }}
-            ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }}
-            ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.minor }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
 
       - name: Set up verified Wiz CLI
         id: wizcli
@@ -96,13 +111,15 @@ jobs:
         env:
           IMAGE_NAME: ghcr.io/dark-vex/zabbix-server-mysql
           VERSION: ${{ steps.version.outputs.version }}
-          MINOR: ${{ steps.version.outputs.minor }}
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           set -euo pipefail
 
-          for TAG in latest "ubuntu-$MINOR" "$VERSION" "$MINOR"; do
-            docker push "$IMAGE_NAME:$TAG"
-          done
+          while IFS= read -r REF; do
+            if [ -n "$REF" ]; then
+              docker push "$REF"
+            fi
+          done <<< "$TAGS"
 
           REF="$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "$IMAGE_NAME:$VERSION" | grep "^${IMAGE_NAME}@" | head -n1)"
           DIGEST="${REF#*@}"
