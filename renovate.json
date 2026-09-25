@@ -4,9 +4,16 @@
     "config:recommended",
     "helpers:pinGitHubActionDigests"
   ],
+  "pip-compile": {
+    "managerFilePatterns": ["/(^|/)requirements\\.txt$/"]
+  },
   "packageRules": [
     {
       "matchManagers": ["dockerfile"],
+      "enabled": false
+    },
+    {
+      "matchManagers": ["pip_requirements"],
       "enabled": false
     }
   ]

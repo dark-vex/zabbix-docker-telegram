@@ -3,15 +3,19 @@ FROM zabbix/zabbix-server-mysql:ubuntu-${ZBX_VERSION}
 
 USER root
 
-RUN DEBIAN_FRONTEND=noninteractive apt update && apt-get -y \
+COPY ./requirements.txt /tmp/requirements.txt
+
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get -y \
             --no-install-recommends install \
-            python3 python3-pip && \
+            python3 python3-venv && \
             apt-get -y clean && \
             rm -rf /var/lib/apt/lists/* && \
-            ln -s /usr/bin/python3 /usr/bin/python
+            python3 -m venv /opt/venv && \
+            printf '#!/bin/sh\nexec /opt/venv/bin/python "$@"\n' > /usr/bin/python && \
+            chmod 0755 /usr/bin/python && \
+            /opt/venv/bin/pip install --no-cache-dir --require-hashes -r /tmp/requirements.txt && \
+            rm /tmp/requirements.txt
+
+ENV PATH="/opt/venv/bin:${PATH}"
 
 USER 1997
-
-COPY ./requirements.txt /tmp/
-
-RUN pip3 install -r /tmp/requirements.txt --break-system-packages --no-cache-dir
