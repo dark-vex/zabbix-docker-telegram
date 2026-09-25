@@ -1,0 +1,74 @@
+name: Set up verified Wiz CLI
+description: >-
+  Downloads the Wiz CLI binary, verifies its GPG signature against Wiz's
+  pinned public key fingerprint and checks its SHA256 checksum before
+  adding it to PATH. Fails the job if either check does not pass.
+
+inputs:
+  version:
+    description: >-
+      wizcli release to download. Wiz's own documentation only documents
+      "latest" as a value here; authenticity is not guaranteed by pinning
+      a version string but by the GPG signature check against the pinned
+      key fingerprint below.
+    required: false
+    default: latest
+  fingerprint:
+    description: >-
+      Expected full fingerprint (uppercase hex, no spaces) of the Wiz
+      public signing key. The downloaded public key is rejected unless
+      it exports a key matching this fingerprint.
+    required: false
+    default: 61DF40680AB1A80E51503B61CE4AE4BAD12EE02C
+
+runs:
+  using: composite
+  steps:
+    - name: Download and verify wizcli
+      shell: bash
+      env:
+        WIZCLI_VERSION: ${{ inputs.version }}
+        WIZCLI_FINGERPRINT: ${{ inputs.fingerprint }}
+      run: |
+        set -euo pipefail
+
+        if [[ ! "$WIZCLI_VERSION" =~ ^(latest|[0-9]+(\.[0-9]+)*)$ ]]; then
+          echo "::error::Invalid wizcli version input: '$WIZCLI_VERSION'"
+          exit 1
+        fi
+
+        if [[ ! "$WIZCLI_FINGERPRINT" =~ ^[0-9A-F]{40}$ ]]; then
+          echo "::error::Invalid wizcli fingerprint input: '$WIZCLI_FINGERPRINT'"
+          exit 1
+        fi
+
+        WORKDIR="$RUNNER_TEMP/wizcli"
+        mkdir -p "$WORKDIR"
+        cd "$WORKDIR"
+
+        BASE_URL="https://downloads.wiz.io/v1/wizcli/${WIZCLI_VERSION}"
+
+        curl -fsSL --retry 3 -o wizcli "${BASE_URL}/wizcli-linux-amd64"
+        curl -fsSL --retry 3 -o wizcli-sha256 "${BASE_URL}/wizcli-linux-amd64-sha256"
+        curl -fsSL --retry 3 -o wizcli-sha256.sig "${BASE_URL}/wizcli-linux-amd64-sha256.sig"
+        curl -fsSL --retry 3 -o public_key.asc "https://downloads.wiz.io/wizcli/public_key.asc"
+
+        export GNUPGHOME
+        GNUPGHOME="$(mktemp -d)"
+        trap 'rm -rf "$GNUPGHOME"' EXIT
+
+        gpg --batch --quiet --import public_key.asc
+
+        gpg --batch --export "$WIZCLI_FINGERPRINT" > wiz-keyring.gpg
+        if [[ ! -s wiz-keyring.gpg ]]; then
+          echo "::error::downloaded public key does not match pinned fingerprint"
+          exit 1
+        fi
+
+        gpgv --keyring "$PWD/wiz-keyring.gpg" wizcli-sha256.sig wizcli-sha256
+
+        echo "$(tr -d '[:space:]' < wizcli-sha256)  wizcli" | sha256sum -c -
+
+        chmod +x wizcli
+        echo "$WORKDIR" >> "$GITHUB_PATH"
+        ./wizcli version
