@@ -48,19 +48,20 @@ jobs:
           --build-arg ZBX_VERSION=${{ steps.version.outputs.version }} \
           --tag ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }}
 
+    - name: Set up verified Wiz CLI
+      uses: ./.github/actions/setup-wizcli
+
     - name: Image Scan
       id: scan
       env:
         WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
         WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
       run: |
-        curl -Lo wizcli https://downloads.wiz.io/v1/wizcli/latest/wizcli-linux-amd64
-        chmod +x wizcli
-        ./wizcli scan container-image ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }} --sarif-output-file=sarif.json
+        wizcli scan container-image ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }} --sarif-output-file=sarif.json
 
     - name: Upload SARIF file
       uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
       #Upload SARIF file
-      if: success() || failure()
+      if: (success() || failure()) && hashFiles('sarif.json') != ''
       with:
         sarif_file: ${{ github.workspace }}/sarif.json
