@@ -9,9 +9,7 @@ concurrency:
   group: renovate
   cancel-in-progress: false
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {}
 
 jobs:
   renovate:
@@ -23,6 +21,7 @@ jobs:
         with:
           app-id: ${{ secrets.RENOVATE_APP_ID }}
           private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
 
       - name: Self-hosted Renovate
         uses: renovatebot/github-action@9fea9f0fbf80401026d11d03911d62b1f70fef1f # v46.3.3
