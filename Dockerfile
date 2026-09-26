@@ -1,5 +1,5 @@
-ARG ZBX_VERSION=7.0-latest
-FROM zabbix/zabbix-server-mysql:ubuntu-${ZBX_VERSION}
+ARG ZBX_IMAGE=zabbix/zabbix-server-mysql:ubuntu-7.0-latest
+FROM ${ZBX_IMAGE}
 
 USER root
 

@@ -1,9 +1,4 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
-name: Build, scan, push and upload sarif report
+name: Build and scan image
 
 on:
   push:
@@ -18,15 +13,24 @@ permissions:
 
 jobs:
 
-  build:
+  image:
+
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
 
     permissions:
-      contents: read # for actions/checkout to fetch code
-      security-events: write # for github/codeql-action/upload-sarif to upload SARIF results
-    runs-on: ubuntu-latest
+      contents: read
+    runs-on: ${{ matrix.runner }}
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
 
     - name: Read Zabbix version
       id: version
@@ -36,17 +40,105 @@ jobs:
           echo "::error::Invalid version string: '$VERSION'"
           exit 1
         fi
+        DIGEST="$(tr -d '[:space:]' < release-versions/zabbix-server-7.0-latest.digest)"
+        if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+          echo "::error::Invalid base image digest: '$DIGEST'"
+          exit 1
+        fi
         echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+        echo "base_image=zabbix/zabbix-server-mysql:ubuntu-${VERSION}@${DIGEST}" >> "$GITHUB_OUTPUT"
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
     - name: Build the Docker image
-      # Tag image to be built
-      # Change ${{ github.repository }} variable by another image name if you want but don't forget changing also image-tag below
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: .
+        platforms: linux/${{ matrix.arch }}
+        provenance: false
+        sbom: false
+        build-args: |
+          ZBX_IMAGE=${{ steps.version.outputs.base_image }}
+        tags: ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }}-${{ matrix.arch }}
+        outputs: type=oci,dest=${{ runner.temp }}/image-${{ matrix.arch }}.tar
+
+    - name: Upload image
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: image-${{ matrix.arch }}
+        path: ${{ runner.temp }}/image-${{ matrix.arch }}.tar
+        if-no-files-found: error
+        retention-days: 1
+
+  build:
+    needs: image
+
+    permissions:
+      contents: read # for actions/checkout to fetch code
+      security-events: write # for github/codeql-action/upload-sarif to upload SARIF results
+    runs-on: ubuntu-latest
+
+    services:
+      registry:
+        image: mirror.gcr.io/library/registry:3.1.2@sha256:c87f33837722a100572e95d7dc4bf539fc42cf68202b13c3bc03c0ff54c3a649
+        ports:
+          - 5000:5000
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        persist-credentials: false
+
+    - name: Read Zabbix version
+      id: version
       run: |
-        docker build . --file Dockerfile \
-          --build-arg ZBX_VERSION=${{ steps.version.outputs.version }} \
-          --tag ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }}
+        VERSION="$(tr -d '[:space:]' < release-versions/zabbix-server-7.0-latest.txt)"
+        if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::Invalid version string: '$VERSION'"
+          exit 1
+        fi
+        DIGEST="$(tr -d '[:space:]' < release-versions/zabbix-server-7.0-latest.digest)"
+        if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+          echo "::error::Invalid base image digest: '$DIGEST'"
+          exit 1
+        fi
+        echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+        echo "base_image=zabbix/zabbix-server-mysql:ubuntu-${VERSION}@${DIGEST}" >> "$GITHUB_OUTPUT"
+
+    - name: Download images
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      with:
+        pattern: image-*
+        path: ${{ runner.temp }}/images
+        merge-multiple: true
+
+    - name: Stage images in local registry
+      id: stage
+      env:
+        IMAGES_DIR: ${{ runner.temp }}/images
+        IMAGE_NAME: ghcr.io/dark-vex/zabbix-server-mysql
+        LOCAL_IMAGE: localhost:5000/zabbix-server-mysql
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        set -euo pipefail
+        for ARCH in amd64 arm64; do
+          skopeo copy --preserve-digests --dest-tls-verify=false \
+            --digestfile "${RUNNER_TEMP}/digest-${ARCH}" \
+            "oci-archive:${IMAGES_DIR}/image-${ARCH}.tar" \
+            "docker://${LOCAL_IMAGE}:${ARCH}"
+          DIGEST="$(tr -d '[:space:]' < "${RUNNER_TEMP}/digest-${ARCH}")"
+          if [[ ! "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "::error::Unexpected ${ARCH} digest: '$DIGEST'"
+            exit 1
+          fi
+          docker pull "${LOCAL_IMAGE}@${DIGEST}"
+          docker tag "${LOCAL_IMAGE}@${DIGEST}" "${IMAGE_NAME}:${VERSION}-${ARCH}"
+          echo "${ARCH}=${DIGEST}" >> "$GITHUB_OUTPUT"
+        done
 
     - name: Set up verified Wiz CLI
+      id: wizcli
       uses: ./.github/actions/setup-wizcli
 
     - name: Image Scan
@@ -55,12 +147,66 @@ jobs:
         WIZ_CLIENT_ID: ${{ secrets.WIZ_CLIENT_ID }}
         WIZ_CLIENT_SECRET: ${{ secrets.WIZ_CLIENT_SECRET }}
         WIZ_POLICIES: "[ddl] Default vulnerabilities policy"
+        WIZCLI: ${{ steps.wizcli.outputs.path }}
+        IMAGE_NAME: ghcr.io/dark-vex/zabbix-server-mysql
+        VERSION: ${{ steps.version.outputs.version }}
       run: |
-        wizcli scan container-image ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }} --policies="$WIZ_POLICIES" --sarif-output-file=sarif.json
+        RC=0
+        "$WIZCLI" scan container-image "${IMAGE_NAME}:${VERSION}-amd64" --policies="$WIZ_POLICIES" --sarif-output-file=sarif.json || RC=1
+        "$WIZCLI" scan container-image "${IMAGE_NAME}:${VERSION}-arm64" --policies="$WIZ_POLICIES" --sarif-output-file=sarif-arm64.json || RC=1
+        exit "$RC"
 
     - name: Upload SARIF file
       uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
-      #Upload SARIF file
       if: (success() || failure()) && hashFiles('sarif.json') != ''
       with:
         sarif_file: ${{ github.workspace }}/sarif.json
+
+    - name: Set arm64 SARIF category
+      if: (success() || failure()) && hashFiles('sarif-arm64.json') != ''
+      run: |
+        jq '.runs[].automationDetails.id = "wiz-code-scanning/WizCLI-arm64"' sarif-arm64.json > sarif-arm64.tmp
+        mv sarif-arm64.tmp sarif-arm64.json
+
+    - name: Upload arm64 SARIF file
+      uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+      if: (success() || failure()) && hashFiles('sarif-arm64.json') != ''
+      with:
+        sarif_file: ${{ github.workspace }}/sarif-arm64.json
+
+    - name: Assemble multi-arch index
+      env:
+        LOCAL_IMAGE: localhost:5000/zabbix-server-mysql
+        VERSION: ${{ steps.version.outputs.version }}
+        AMD64_DIGEST: ${{ steps.stage.outputs.amd64 }}
+        ARM64_DIGEST: ${{ steps.stage.outputs.arm64 }}
+      run: |
+        set -euo pipefail
+        docker buildx imagetools create \
+          --tag "${LOCAL_IMAGE}:${VERSION}" \
+          --annotation "index:org.opencontainers.image.version=${VERSION}" \
+          "${LOCAL_IMAGE}@${AMD64_DIGEST}" \
+          "${LOCAL_IMAGE}@${ARM64_DIGEST}"
+        MEDIA_TYPE="$(docker buildx imagetools inspect "${LOCAL_IMAGE}:${VERSION}" --raw | jq -r '.mediaType')"
+        if [ "$MEDIA_TYPE" != "application/vnd.oci.image.index.v1+json" ]; then
+          echo "::error::Unexpected index media type: '$MEDIA_TYPE'"
+          exit 1
+        fi
+        docker buildx imagetools inspect "${LOCAL_IMAGE}:${VERSION}" --raw | jq .
+
+    - name: Grype scan
+      uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+      with:
+        image: ghcr.io/dark-vex/zabbix-server-mysql:${{ steps.version.outputs.version }}-amd64
+        fail-build: false
+        only-fixed: true
+        severity-cutoff: high
+        output-format: sarif
+        output-file: grype.sarif
+
+    - name: Upload Grype SARIF file
+      uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
+      if: (success() || failure()) && hashFiles('grype.sarif') != ''
+      with:
+        sarif_file: ${{ github.workspace }}/grype.sarif
+        category: grype
