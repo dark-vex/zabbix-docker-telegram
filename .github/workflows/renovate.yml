@@ -14,6 +14,7 @@ permissions: {}
 jobs:
   renovate:
     runs-on: ubuntu-latest
+
     steps:
       - name: Generate GitHub App token
         id: app-token
@@ -37,3 +38,4 @@ jobs:
           RENOVATE_PLATFORM: github
           RENOVATE_REPOSITORIES: ${{ github.repository }}
           RENOVATE_PLATFORM_COMMIT: enabled
+          RENOVATE_BINARY_SOURCE: install
