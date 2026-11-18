@@ -67,8 +67,8 @@ jobs:
           # Protect the current release (floating tags and everything they reference)
           exclude-tags: '^(latest|\d+\.\d+|ubuntu-\d+\.\d+)$'
           use-regex: true
-          # Keep the previous X.Y.Z release; total retained = 2 releases
-          keep-n-tagged: 1
+          # Excluded (current) release counts toward this, so 2 = current + previous X.Y.Z
+          keep-n-tagged: 2
           delete-untagged: true
           delete-orphaned-images: true
           delete-ghost-images: true
