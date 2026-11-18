@@ -1,0 +1,78 @@
+name: GHCR cleanup
+
+on:
+  schedule:
+    # Monday, >24h after the Sunday 02:40 UTC build
+    - cron: '40 3 * * 1'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only log what would be deleted'
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: ghcr-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      packages: write
+    steps:
+      - name: Check for running build
+        id: guard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          running=$(gh run list --workflow build.yaml --limit 20 \
+            --json status --jq '[.[] | select(.status != "completed")] | length')
+          if [ "$running" -gt 0 ]; then
+            echo "build.yaml is running ($running run(s)); skipping cleanup"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute dry-run mode
+        id: mode
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          LIVE_VAR: ${{ vars.GHCR_CLEANUP_LIVE }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            dry_run="$INPUT_DRY_RUN"
+          elif [ "$LIVE_VAR" = "true" ]; then
+            dry_run=false
+          else
+            dry_run=true
+          fi
+          echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
+          echo "dry_run=$dry_run"
+
+      - name: Clean up old images
+        if: steps.guard.outputs.skip != 'true'
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          owner: dark-vex
+          package: zabbix-server-mysql
+          # Protect the current release (floating tags and everything they reference)
+          exclude-tags: '^(latest|\d+\.\d+|ubuntu-\d+\.\d+)$'
+          use-regex: true
+          # Keep the previous X.Y.Z release; total retained = 2 releases
+          keep-n-tagged: 1
+          delete-untagged: true
+          delete-orphaned-images: true
+          delete-ghost-images: true
+          delete-partial-images: false
+          validate: true
+          older-than: 1 day
+          dry-run: ${{ steps.mode.outputs.dry_run }}
