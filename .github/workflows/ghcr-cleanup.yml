@@ -57,6 +57,25 @@ jobs:
           echo "dry_run=$dry_run" >> "$GITHUB_OUTPUT"
           echo "dry_run=$dry_run"
 
+      - name: Find releases to keep
+        id: keep
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          releases=$(gh api --paginate \
+            /users/dark-vex/packages/container/zabbix-server-mysql/versions \
+            --jq '.[].metadata.container.tags[]' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -uV | tail -n 2)
+          if [ -z "$releases" ]; then
+            echo "no X.Y.Z release tags found; refusing to continue" >&2
+            exit 1
+          fi
+          echo "Keeping releases:"
+          echo "$releases"
+          alt=$(echo "$releases" | sed 's/\./\\./g' | paste -sd '|' -)
+          echo "exclude=^(latest|\\d+\\.\\d+|ubuntu-\\d+\\.\\d+|$alt)\$" >> "$GITHUB_OUTPUT"
+
       - name: Clean up old images
         if: steps.guard.outputs.skip != 'true'
         uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
@@ -64,11 +83,10 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           owner: dark-vex
           package: zabbix-server-mysql
-          # Protect the current release (floating tags and everything they reference)
-          exclude-tags: '^(latest|\d+\.\d+|ubuntu-\d+\.\d+)$'
+          # Protect floating tags and the two newest X.Y.Z releases, with everything they reference
+          exclude-tags: ${{ steps.keep.outputs.exclude }}
+          delete-tags: '.*'
           use-regex: true
-          # Excluded (current) release counts toward this, so 2 = current + previous X.Y.Z
-          keep-n-tagged: 2
           delete-untagged: true
           delete-orphaned-images: true
           delete-ghost-images: true
